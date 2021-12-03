@@ -7,6 +7,7 @@ import GPyOpt
 from GPyOpt.methods import BayesianOptimization
 from config.cgp_configs import *
 import shlex
+import glob
 
 def send_cmd(cmd):
     ssh_cmd = 'ssh db {}'.format(shlex.quote(cmd))
@@ -66,27 +67,30 @@ def f_mongo(x):
     send_cmd(os_kn_vm_cmd)
 
     # OS param - network
-    RFS = str(x[0, 10]) != 0
+    RFS = bool(x[0, 10])
     rps_sock_flow_entries = 32768 if RFS else 0
-    device = 'lo'
-    num_queues = 1
     rps_cmds = [
-        'sudo bash -c "echo {} > /proc/sys/net/core/rps_sock_flow_entries"'.format(rps_sock_flow_entries)
+        f'sudo bash -c "echo {rps_sock_flow_entries} > /proc/sys/net/core/rps_sock_flow_entries"'
     ]
-    for i in range(num_queues):
-        rps_cmds.append('sudo bash -c "echo {} > /sys/class/net/{}/queues/rx-{}/rps_flow_cnt"' \
-            .format(rps_sock_flow_entries // num_queues, device, i))
+    rx_queues_dirs = glob.glob(f'/sys/class/net/{network_device}/queues/rx-*/')
+    network_num_queues = len(rx_queues_dirs)
+    for rx_queues_dir in rx_queues_dirs:
+        rps_cmds.append(
+            f'sudo bash -c "echo {rps_sock_flow_entries // network_num_queues} > {rx_queues_dir}rps_flow_cnt"'
+        )
+    for cmd in rps_cmds:
+        send_cmd(cmd)
 
     # OS param - storage
-    noatime = x[0, 11] != 0
+    noatime = bool(x[0, 11])
     nr_requests = str(x[0, 12])
     scheduler = schedulers[x[0, 13]]
     read_ahead_kb = str(x[0, 14])
 
     storage_cmds = [
         'sudo sed -i \'s/{old}/{new}/\' /etc/fstab'.format(
-            old=(noatime_conf['close'] if noatime==True else noatime_conf['open']),
-            new=(noatime_conf['open'] if noatime==True else noatime_conf['close'])
+            old=(noatime_conf['close'] if noatime else noatime_conf['open']),
+            new=(noatime_conf['open'] if noatime else noatime_conf['close'])
         ),
         'sudo bash -c "echo {} > /sys/block/{}/queue/nr_requests"'.format(nr_requests, block_device),
         'sudo bash -c "echo {} > /sys/block/{}/queue/scheduler"'.format(scheduler, block_device),

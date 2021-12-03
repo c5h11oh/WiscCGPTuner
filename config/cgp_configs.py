@@ -30,3 +30,4 @@ noatime_conf = {
     'close': 'defaults\t0 1', 
     'open': 'defaults,noatime\t0 1', 
 }
+network_device = 'ens4'
