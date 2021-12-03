@@ -1,16 +1,21 @@
-#Import Modules
-import os, sys
-import GPy
-import numpy as np
-#GPyOpt - Cases are important, for some reason
-import GPyOpt
-from GPyOpt.methods import BayesianOptimization
-from config.cgp_configs import *
+# Utilities
+import os, time
 import shlex
 import glob
+# Bayesian Optimization
+import GPy
+import numpy as np
+import GPyOpt
+from GPyOpt.methods import BayesianOptimization
+# Configurations
+from config.cgp_configs import *
+tuner_dir = os.path.dirname(os.path.realpath(__file__))
 
-def send_cmd(cmd):
+
+def send_cmd(cmd, background=False):
     ssh_cmd = 'ssh {} {}'.format(database, shlex.quote(cmd))
+    if (background):
+        ssh_cmd += ' &'
     print(ssh_cmd)
     os.system(ssh_cmd)
     # os.system(cmd)
@@ -32,7 +37,7 @@ def return_to_default():
 
     # OS param - storage
     storage_cmds = [
-        'sudo sed -i \'s/{}/{}/\' /etc/fstab'.format(noatime_conf['open'],noatime_conf['close']),
+        # 'sudo sed -i \'s/{}/{}/\' /etc/fstab'.format(noatime_conf['open'],noatime_conf['close']),
         'sudo bash -c "echo {} > /sys/block/{}/queue/nr_requests"'.format(default['nr_requests'], block_device),
         'sudo bash -c "echo {} > /sys/block/{}/queue/scheduler"'.format(schedulers[default['scheduler']], block_device),
         'sudo bash -c "echo {} > /sys/block/{}/queue/read_ahead_kb"'.format(default['read_ahead_kb'], block_device),
@@ -76,16 +81,16 @@ def setup_system_params(x):
         send_cmd(cmd)
 
     # OS param - storage
-    noatime = bool(x[0, 11])
+    # noatime = bool(x[0, 11])
     nr_requests = str(x[0, 12])
     scheduler = schedulers[x[0, 13]]
     read_ahead_kb = str(x[0, 14])
 
     storage_cmds = [
-        'sudo sed -i \'s/{old}/{new}/\' /etc/fstab'.format(
-            old=(noatime_conf['close'] if noatime else noatime_conf['open']),
-            new=(noatime_conf['open'] if noatime else noatime_conf['close'])
-        ),
+        # 'sudo sed -i \'s/{old}/{new}/\' /etc/fstab'.format(
+        #     old=(noatime_conf['close'] if noatime else noatime_conf['open']),
+        #     new=(noatime_conf['open'] if noatime else noatime_conf['close'])
+        # ),
         'sudo bash -c "echo {} > /sys/block/{}/queue/nr_requests"'.format(nr_requests, block_device),
         'sudo bash -c "echo {} > /sys/block/{}/queue/scheduler"'.format(scheduler, block_device),
         'sudo bash -c "echo {} > /sys/block/{}/queue/read_ahead_kb"'.format(read_ahead_kb, block_device),
@@ -100,30 +105,49 @@ def f_mongo(x):
     input: configuration x
     output: mean response time R (ms)
     """
+    # sanity check
+    if (x[0, 15] < 0 or x[0,15] > 2):
+        raise ValueError()
+    # TODO: others?
+
     # setup system params (OS, network, storage)
     setup_system_params(x)
 
     # mount storage at /db
-    send_cmd(f'sudo mount -o defaults /dev/{block_device} /db')
+    mount_cmd = 'sudo mount -o defaults' + (',noatime' if bool(x[0, 11]) else '') + f' /dev/{block_device} /db'
+    send_cmd(mount_cmd)
 
     # init MongoDB with params
-    wiredTigerCacheSizeGB = str(x[0, 0])
-    eviction_dirty_target = str(x[0, 1])
-    eviction_dirty_trigger = str(x[0, 2])
-    syncdelay = str(x[0, 3])
-
-    db_cmd = f'mongod --dbpath={mongo_dir}/db --logpath={mongo_dir}/log/log.log --bind_ip localhost,{database} --wiredTigerCacheSizeGB {wiredTigerCacheSizeGB} --wiredTigerEngineConfigString "eviction_dirty_target={eviction_dirty_target},eviction_dirty_trigger={eviction_dirty_trigger}" --setParameter syncdelay={syncdelay} &'
+    
+    # wiredTigerCacheSizeGB = str(x[0, 0])
+    # eviction_dirty_target = str(x[0, 1])
+    # eviction_dirty_trigger = str(x[0, 2])
+    # syncdelay = str(x[0, 3])
+    db_cmd = f'mongod --dbpath={mongo_dir}/db --logpath={mongo_dir}/log/log.log --bind_ip localhost,{database}'
+    if (x[0,0] != 0) :
+        db_cmd += f' --wiredTigerCacheSizeGB {x[0, 0]} --wiredTigerEngineConfigString "eviction_dirty_target={x[0, 1]},eviction_dirty_trigger={x[0, 2]}" --setParameter syncdelay={x[0, 3]}'
+    db_cmd += ' &'
     ## mongod will run in background (&)
-    send_cmd(db_cmd)
+    send_cmd(db_cmd, True)
+    time.sleep(2)
 
     # drop previous collection if exists
-    os.system('mongo --host {} --eval "db.getMongo().getDB(\"ycsb\").usertable.drop()"' \
-                .format(database))
+    drop_coll_cmd = 'mongo --host {} --eval "db.getMongo().getDB(\'ycsb\').usertable.drop()"'.format(database)
+    os.system(drop_coll_cmd)
 
-    # load workload
+    # load workload (on server 'database')
     wl_mix = chr(ord('a') + x[0, 15]) # [0, 1, 2] => ['a', 'b', 'c']
-    wl_thd = str(x[0, 16]
-    os.system('ycsb')
+    wl_thd = x[0, 16]
+    ycsb_load_cmd = f'{ycsb_path}/ycsb load mongodb -threads {db_cpu} -s -P {tuner_dir}/ycsb/defaults/workload{wl_mix}'
+    for k, v in ycsb_params.items():
+        ycsb_load_cmd += f' -p {k}={v}'
+    send_cmd(ycsb_load_cmd)
+
+    # run YCSB (from this server 'ycsb')
+    ycsb_run_cmd = f'{ycsb_path}/ycsb run mongodb -threads {wl_thd if wl_thd != 0 else db_cpu} -P {tuner_dir}/ycsb/defaults/workload{wl_mix} -p mongodb.url=mongodb://{database}:27017/ycsb >> ycsb_result'
+    for k, v in ycsb_params.items():
+        ycsb_run_cmd += f' -p {k}={v}'
+    os.system(ycsb_run_cmd)
 
     # stop MongoDB
     send_cmd('pkill mongod')
@@ -150,7 +174,7 @@ x = np.array([[
     # OS param - network
     0, # RFS
     # OS param - storage
-    default['noatime'],
+    1, #default['noatime'],
     default['nr_requests'],
     default['scheduler'],
     default['read_ahead_kb'],
