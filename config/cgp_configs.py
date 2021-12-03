@@ -19,12 +19,12 @@ default = {
     'vfs_cache_pressure' : 100,
 
     'noatime' : False,
-    'nr_requests' : 8192,
+    'nr_requests' : 256,
     'scheduler' : 3,
     'read_ahead_kb' : 128,
 }
 mongo_dir = '/home/cgptuner/mongodb'
-block_device='sda'
+block_device='sdb'
 schedulers = ['bfq', 'kyber', 'none', 'mq-deadline', 'deadline', 'cfq', 'noop' ]
 noatime_conf = {
     'close': 'defaults\t0 1', 

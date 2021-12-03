@@ -6,6 +6,13 @@ import numpy as np
 import GPyOpt
 from GPyOpt.methods import BayesianOptimization
 from config.cgp_configs import *
+import shlex
+
+def send_cmd(cmd):
+    ssh_cmd = 'ssh db {}'.format(shlex.quote(cmd))
+    print(ssh_cmd)
+    os.system(ssh_cmd)
+    # os.system(cmd)
 
 def return_to_default():
     os_kn_vm_cmd = 'sudo sysctl kernel.sched_latency_ns={} kernel.sched_migration_cost_ns={} vm.dirty_background_ratio={} vm.dirty_ratio={} vm.min_free_kbytes={} vm.vfs_cache_pressure={}'.format(
@@ -24,7 +31,7 @@ def return_to_default():
     ]
 
     for cmd in storage_cmds:
-        os.system(cmd)
+        send_cmd(cmd)
 
 def f_mongo(x):
     # DB param
@@ -56,7 +63,7 @@ def f_mongo(x):
         vfs_cache_pressure,
     )
 
-    # os.system(os_kn_vm_cmd)
+    send_cmd(os_kn_vm_cmd)
 
     # OS param - network
     RFS = str(x[0, 10]) != 0
@@ -87,7 +94,7 @@ def f_mongo(x):
     ]
 
     for cmd in storage_cmds:
-        os.system(cmd)
+        send_cmd(cmd)
 
     # workload
     wl1 = str(x[0, 15])
