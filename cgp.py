@@ -10,12 +10,13 @@ import shlex
 import glob
 
 def send_cmd(cmd):
-    ssh_cmd = 'ssh db {}'.format(shlex.quote(cmd))
+    ssh_cmd = 'ssh {} {}'.format(database, shlex.quote(cmd))
     print(ssh_cmd)
     os.system(ssh_cmd)
     # os.system(cmd)
 
 def return_to_default():
+    # OS param - kernel, vm
     os_kn_vm_cmd = 'sudo sysctl kernel.sched_latency_ns={} kernel.sched_migration_cost_ns={} vm.dirty_background_ratio={} vm.dirty_ratio={} vm.min_free_kbytes={} vm.vfs_cache_pressure={}'.format(
         default['sched_latency_ns'],
         default['sched_migration_cost_ns'],
@@ -24,13 +25,18 @@ def return_to_default():
         default['min_free_kbytes'],
         default['vfs_cache_pressure'],
     )
+    send_cmd(os_kn_vm_cmd)
+
+    # OS param - network
+    # TODO: reset RFS
+
+    # OS param - storage
     storage_cmds = [
-        'sudo sed -i \'s/{}/{}\t0 1/\' /etc/fstab'.format(noatime_conf['open'],noatime_conf['close']),
+        'sudo sed -i \'s/{}/{}/\' /etc/fstab'.format(noatime_conf['open'],noatime_conf['close']),
         'sudo bash -c "echo {} > /sys/block/{}/queue/nr_requests"'.format(default['nr_requests'], block_device),
         'sudo bash -c "echo {} > /sys/block/{}/queue/scheduler"'.format(schedulers[default['scheduler']], block_device),
         'sudo bash -c "echo {} > /sys/block/{}/queue/read_ahead_kb"'.format(default['read_ahead_kb'], block_device),
     ]
-
     for cmd in storage_cmds:
         send_cmd(cmd)
 
@@ -90,25 +96,43 @@ def setup_system_params(x):
 
 
 def f_mongo(x):
+    """
+    input: configuration x
+    output: mean response time R (ms)
+    """
+    # setup system params (OS, network, storage)
     setup_system_params(x)
 
-    # DB param
-    wiredTigerCacheSizeGB = x[0, 0]
-    eviction_dirty_target = x[0, 1]
-    eviction_dirty_trigger = x[0, 2]
-    syncdelay = x[0, 3]
+    # mount storage at /db
+    send_cmd(f'sudo mount -o defaults /dev/{block_device} /db')
 
-    db_cmd = f'mongod --dbpath={mongo_dir}/db --logpath={mongo_dir}/log/log.log --wiredTigerCacheSizeGB {wiredTigerCacheSizeGB} --wiredTigerEngineConfigString "eviction_dirty_target={eviction_dirty_target},eviction_dirty_trigger={eviction_dirty_trigger}" --setParameter syncdelay={syncdelay}'.format(
-        wiredTigerCacheSizeGB=str(wiredTigerCacheSizeGB),
-        eviction_dirty_target=str(eviction_dirty_target),
-        eviction_dirty_trigger=str(eviction_dirty_trigger),
-        syncdelay=str(syncdelay)
-    )
+    # init MongoDB with params
+    wiredTigerCacheSizeGB = str(x[0, 0])
+    eviction_dirty_target = str(x[0, 1])
+    eviction_dirty_trigger = str(x[0, 2])
+    syncdelay = str(x[0, 3])
 
-    # workload
-    wl1 = str(x[0, 15])
-    wl2 = str(x[0, 16])
+    db_cmd = f'mongod --dbpath={mongo_dir}/db --logpath={mongo_dir}/log/log.log --bind_ip localhost,{database} --wiredTigerCacheSizeGB {wiredTigerCacheSizeGB} --wiredTigerEngineConfigString "eviction_dirty_target={eviction_dirty_target},eviction_dirty_trigger={eviction_dirty_trigger}" --setParameter syncdelay={syncdelay} &'
+    ## mongod will run in background (&)
+    send_cmd(db_cmd)
 
+    # drop previous collection if exists
+    os.system('mongo --host {} --eval "db.getMongo().getDB(\"ycsb\").usertable.drop()"' \
+                .format(database))
+
+    # load workload
+    wl_mix = chr(ord('a') + x[0, 15]) # [0, 1, 2] => ['a', 'b', 'c']
+    wl_thd = str(x[0, 16]
+    os.system('ycsb')
+
+    # stop MongoDB
+    send_cmd('pkill mongod')
+
+    # unmount /db
+    send_cmd(f'sudo umount /dev/{block_device}')
+
+    # reset params (optional)
+    return_to_default()
 
 x = np.array([[
     # DB param
