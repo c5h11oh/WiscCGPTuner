@@ -11,7 +11,7 @@ database="database"
 db_cpu = 8 # cpu count of the database server 
 
 ## ycsb
-ycsb_path = '/home/cgptuner/ycsb-0.17.0/bin'
+ycsb_path = '/home/cgptuner/ycsb-0.17.0'
 
 ## configurations
 default = { # database server default configurations

@@ -9,8 +9,6 @@ import GPyOpt
 from GPyOpt.methods import BayesianOptimization
 # Configurations
 from config.cgp_configs import *
-tuner_dir = os.path.dirname(os.path.realpath(__file__))
-
 
 def send_cmd(cmd, background=False):
     ssh_cmd = 'ssh {} {}'.format(database, shlex.quote(cmd))
@@ -138,13 +136,13 @@ def f_mongo(x):
     # load workload (on server 'database')
     wl_mix = chr(ord('a') + x[0, 15]) # [0, 1, 2] => ['a', 'b', 'c']
     wl_thd = x[0, 16]
-    ycsb_load_cmd = f'{ycsb_path}/ycsb load mongodb -threads {db_cpu} -s -P {tuner_dir}/ycsb/defaults/workload{wl_mix}'
+    ycsb_load_cmd = f'{ycsb_path}/bin/ycsb load mongodb -threads {db_cpu} -s -P {ycsb_path}/workloads/workload{wl_mix}'
     for k, v in ycsb_params.items():
         ycsb_load_cmd += f' -p {k}={v}'
     send_cmd(ycsb_load_cmd)
 
     # run YCSB (from this server 'ycsb')
-    ycsb_run_cmd = f'{ycsb_path}/ycsb run mongodb -threads {wl_thd if wl_thd != 0 else db_cpu} -P {tuner_dir}/ycsb/defaults/workload{wl_mix} -p mongodb.url=mongodb://{database}:27017/ycsb >> ycsb_result'
+    ycsb_run_cmd = f'{ycsb_path}/bin/ycsb run mongodb -threads {wl_thd if wl_thd != 0 else db_cpu} -P {ycsb_path}/workloads/workload{wl_mix} -p mongodb.url=mongodb://{database}:27017/ycsb >> ycsb_result'
     for k, v in ycsb_params.items():
         ycsb_run_cmd += f' -p {k}={v}'
     os.system(ycsb_run_cmd)
