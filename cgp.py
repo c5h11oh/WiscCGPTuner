@@ -103,6 +103,29 @@ def f_mongo(x):
     
     pass
 
-x = np.array([[0,1,2,3,4,5,6,7,8,9,10,0,101,1,768,15,16,17]])
-# f_mongo(x)
-return_to_default()
+x = np.array([[
+    # DB param
+    0,
+    0,
+    0,
+    0,
+    # OS param - kernel, vm
+    default['sched_latency_ns'],
+    default['sched_migration_cost_ns'],
+    default['dirty_background_ratio'],
+    default['dirty_ratio'],
+    default['min_free_kbytes'],
+    default['vfs_cache_pressure'],
+    # OS param - network
+    0, # RFS
+    # OS param - storage
+    default['noatime'],
+    default['nr_requests'],
+    default['scheduler'],
+    default['read_ahead_kb'],
+    # workload
+    0,
+    0,
+]])
+f_mongo(x)
+# return_to_default()
