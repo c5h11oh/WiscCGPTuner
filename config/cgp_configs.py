@@ -23,7 +23,7 @@ default = {
     'scheduler' : 3,
     'read_ahead_kb' : 128,
 }
-mongo_dir = '/home/cgptuner/mongodb'
+mongo_dir = '/db/mongodb'
 block_device='sdb'
 schedulers = ['bfq', 'kyber', 'none', 'mq-deadline', 'deadline', 'cfq', 'noop' ]
 noatime_conf = {

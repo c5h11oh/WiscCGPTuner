@@ -34,19 +34,7 @@ def return_to_default():
     for cmd in storage_cmds:
         send_cmd(cmd)
 
-def f_mongo(x):
-    # DB param
-    wiredTigerCacheSizeGB = x[0, 0]
-    eviction_dirty_target = x[0, 1]
-    eviction_dirty_trigger = x[0, 2]
-    syncdelay = x[0, 3]
-
-    db_cmd = f'mongod --dbpath={mongo_dir}/db --logpath={mongo_dir}/log/log.log --wiredTigerCacheSizeGB {wiredTigerCacheSizeGB} --wiredTigerEngineConfigString "eviction_dirty_target={eviction_dirty_target},eviction_dirty_trigger={eviction_dirty_trigger}" --setParameter syncdelay={syncdelay}'.format(
-        wiredTigerCacheSizeGB=str(wiredTigerCacheSizeGB),
-        eviction_dirty_target=str(eviction_dirty_target),
-        eviction_dirty_trigger=str(eviction_dirty_trigger),
-        syncdelay=str(syncdelay)
-    )
+def setup_system_params(x):
     # OS param - kernel, vm
     sched_latency_ns = str(x[0, 4])
     sched_migration_cost_ns = str(x[0, 5])
@@ -100,12 +88,27 @@ def f_mongo(x):
     for cmd in storage_cmds:
         send_cmd(cmd)
 
+
+def f_mongo(x):
+    setup_system_params(x)
+
+    # DB param
+    wiredTigerCacheSizeGB = x[0, 0]
+    eviction_dirty_target = x[0, 1]
+    eviction_dirty_trigger = x[0, 2]
+    syncdelay = x[0, 3]
+
+    db_cmd = f'mongod --dbpath={mongo_dir}/db --logpath={mongo_dir}/log/log.log --wiredTigerCacheSizeGB {wiredTigerCacheSizeGB} --wiredTigerEngineConfigString "eviction_dirty_target={eviction_dirty_target},eviction_dirty_trigger={eviction_dirty_trigger}" --setParameter syncdelay={syncdelay}'.format(
+        wiredTigerCacheSizeGB=str(wiredTigerCacheSizeGB),
+        eviction_dirty_target=str(eviction_dirty_target),
+        eviction_dirty_trigger=str(eviction_dirty_trigger),
+        syncdelay=str(syncdelay)
+    )
+
     # workload
     wl1 = str(x[0, 15])
     wl2 = str(x[0, 16])
 
-    
-    pass
 
 x = np.array([[
     # DB param
