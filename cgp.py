@@ -100,11 +100,13 @@ def setup_system_params(x):
 
 def f_mongo(x):
     """
-    input: configuration x
+    input: configuration + workload x
     output: mean response time R (ms)
     """
     # sanity check
     if (x[0, 15] < 0 or x[0,15] > 2):
+        raise ValueError()
+    if (x[0, 16] == 0):
         raise ValueError()
     # TODO: others?
 
@@ -142,10 +144,11 @@ def f_mongo(x):
     send_cmd(ycsb_load_cmd)
 
     # run YCSB (from this server 'ycsb')
-    ycsb_run_cmd = f'{ycsb_path}/bin/ycsb run mongodb -threads {wl_thd if wl_thd != 0 else db_cpu} -P {ycsb_path}/workloads/workload{wl_mix} -p mongodb.url=mongodb://{database}:27017/ycsb >> ycsb_result'
+    ycsb_run_cmd = f'{ycsb_path}/bin/ycsb run mongodb -threads {wl_thd} -P {ycsb_path}/workloads/workload{wl_mix} -p mongodb.url=mongodb://{database}:27017/ycsb >> ycsb_result'
     for k, v in ycsb_params.items():
         ycsb_run_cmd += f' -p {k}={v}'
     os.system(ycsb_run_cmd)
+    # TODO: get return value
 
     # stop MongoDB
     send_cmd('pkill mongod')
@@ -155,6 +158,9 @@ def f_mongo(x):
 
     # reset params (optional)
     return_to_default()
+
+    # TODO:
+    # return XXXXXXX
 
 x = np.array([[
     # DB param
@@ -172,7 +178,7 @@ x = np.array([[
     # OS param - network
     0, # RFS
     # OS param - storage
-    1, #default['noatime'],
+    default['noatime'],
     default['nr_requests'],
     default['scheduler'],
     default['read_ahead_kb'],
