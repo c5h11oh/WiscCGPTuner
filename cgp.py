@@ -2,6 +2,7 @@
 import os, time
 import shlex
 import glob
+import re
 # Bayesian Optimization
 import GPy
 import numpy as np
@@ -9,6 +10,33 @@ import GPyOpt
 from GPyOpt.methods import BayesianOptimization
 # Configurations
 from config.cgp_configs import *
+
+
+default_x = np.array([[
+    # DB param
+    0,
+    0,
+    0,
+    0,
+    # OS param - kernel, vm
+    default['sched_latency_ns'],
+    default['sched_migration_cost_ns'],
+    default['dirty_background_ratio'],
+    default['dirty_ratio'],
+    default['min_free_kbytes'],
+    default['vfs_cache_pressure'],
+    # OS param - network
+    0, # RFS
+    # OS param - storage
+    default['noatime'],
+    default['nr_requests'],
+    default['scheduler'],
+    default['read_ahead_kb'],
+    # workload
+    0,
+    db_cpu,
+]])
+
 
 def send_cmd(cmd, background=False):
     ssh_cmd = 'ssh {} {}'.format(database, shlex.quote(cmd))
@@ -18,30 +46,6 @@ def send_cmd(cmd, background=False):
     os.system(ssh_cmd)
     # os.system(cmd)
 
-def return_to_default():
-    # OS param - kernel, vm
-    os_kn_vm_cmd = 'sudo sysctl kernel.sched_latency_ns={} kernel.sched_migration_cost_ns={} vm.dirty_background_ratio={} vm.dirty_ratio={} vm.min_free_kbytes={} vm.vfs_cache_pressure={}'.format(
-        default['sched_latency_ns'],
-        default['sched_migration_cost_ns'],
-        default['dirty_background_ratio'],
-        default['dirty_ratio'],
-        default['min_free_kbytes'],
-        default['vfs_cache_pressure'],
-    )
-    send_cmd(os_kn_vm_cmd)
-
-    # OS param - network
-    # TODO: reset RFS
-
-    # OS param - storage
-    storage_cmds = [
-        # 'sudo sed -i \'s/{}/{}/\' /etc/fstab'.format(noatime_conf['open'],noatime_conf['close']),
-        'sudo bash -c "echo {} > /sys/block/{}/queue/nr_requests"'.format(default['nr_requests'], block_device),
-        'sudo bash -c "echo {} > /sys/block/{}/queue/scheduler"'.format(schedulers[default['scheduler']], block_device),
-        'sudo bash -c "echo {} > /sys/block/{}/queue/read_ahead_kb"'.format(default['read_ahead_kb'], block_device),
-    ]
-    for cmd in storage_cmds:
-        send_cmd(cmd)
 
 def setup_system_params(x):
     # OS param - kernel, vm
@@ -98,13 +102,19 @@ def setup_system_params(x):
         send_cmd(cmd)
 
 
+def return_to_default():
+    setup_system_params(default_x)
+
+
 def f_mongo(x):
     """
-    input: configuration x
+    input: configuration + workload x
     output: mean response time R (ms)
     """
     # sanity check
     if (x[0, 15] < 0 or x[0,15] > 2):
+        raise ValueError()
+    if (x[0, 16] == 0):
         raise ValueError()
     # TODO: others?
 
@@ -142,10 +152,17 @@ def f_mongo(x):
     send_cmd(ycsb_load_cmd)
 
     # run YCSB (from this server 'ycsb')
-    ycsb_run_cmd = f'{ycsb_path}/bin/ycsb run mongodb -threads {wl_thd if wl_thd != 0 else db_cpu} -P {ycsb_path}/workloads/workload{wl_mix} -p mongodb.url=mongodb://{database}:27017/ycsb >> ycsb_result'
+    ycsb_run_cmd = f'{ycsb_path}/bin/ycsb run mongodb -threads {wl_thd} -P {ycsb_path}/workloads/workload{wl_mix} -p mongodb.url=mongodb://{database}:27017/ycsb > ycsb_result'
     for k, v in ycsb_params.items():
         ycsb_run_cmd += f' -p {k}={v}'
     os.system(ycsb_run_cmd)
+    with open('ycsb_result', 'r') as f:
+        result = f.read()
+        m = re.search('\[UPDATE\], AverageLatency\(us\), (\d+\.\d+)', result)
+        update_latency = float(m.group(1))
+        m = re.search('\[READ\], AverageLatency\(us\), (\d+\.\d+)', result)
+        read_latency = float(m.group(1))
+        latency = (update_latency + read_latency) /  2
 
     # stop MongoDB
     send_cmd('pkill mongod')
@@ -156,29 +173,9 @@ def f_mongo(x):
     # reset params (optional)
     return_to_default()
 
-x = np.array([[
-    # DB param
-    0,
-    0,
-    0,
-    0,
-    # OS param - kernel, vm
-    default['sched_latency_ns'],
-    default['sched_migration_cost_ns'],
-    default['dirty_background_ratio'],
-    default['dirty_ratio'],
-    default['min_free_kbytes'],
-    default['vfs_cache_pressure'],
-    # OS param - network
-    0, # RFS
-    # OS param - storage
-    1, #default['noatime'],
-    default['nr_requests'],
-    default['scheduler'],
-    default['read_ahead_kb'],
-    # workload
-    0,
-    0,
-]])
-f_mongo(x)
+    return latency
+
+
+latency = f_mongo(default_x)
+print(f'latency = {latency}')
 # return_to_default()
