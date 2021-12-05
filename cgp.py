@@ -158,11 +158,21 @@ def f_mongo(x):
     os.system(ycsb_run_cmd)
     with open('ycsb_result', 'r') as f:
         result = f.read()
-        m = re.search('\[UPDATE\], AverageLatency\(us\), (\d+\.\d+)', result)
-        update_latency = float(m.group(1))
-        m = re.search('\[READ\], AverageLatency\(us\), (\d+\.\d+)', result)
-        read_latency = float(m.group(1))
-        latency = (update_latency + read_latency) /  2
+
+        # latency
+        m = re.search('\[UPDATE\], AverageLatency\(us\), (NaN|\d+\.\d+)', result)
+        update_latency = float(m.group(1)) if m else math.nan
+        m = re.search('\[READ\], AverageLatency\(us\), (NaN|\d+\.\d+)', result)
+        read_latency = float(m.group(1)) if m else math.nan
+        if math.isnan(update_latency) or math.isnan(read_latency):
+            latency = read_latency if math.isnan(update_latency) else update_latency
+        else:
+            latency = (update_latency + read_latency) /  2
+
+        # handling failure
+        m = re.search('\[.+-FAILED\]', result)
+        if m is not None:
+            latency = -1
 
     # stop MongoDB
     send_cmd('pkill mongod')
