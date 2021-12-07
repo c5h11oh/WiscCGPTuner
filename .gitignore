@@ -1,0 +1,4 @@
+ycsb_error_result
+ycsb_result
+*.p
+__pycache__/

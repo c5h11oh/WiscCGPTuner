@@ -3,6 +3,7 @@ import os, time
 import shlex
 import glob
 import re
+import math
 # Bayesian Optimization
 import GPy
 import numpy as np
@@ -49,13 +50,14 @@ def send_cmd(cmd, background=False):
 
 def setup_system_params(x):
     # OS param - kernel, vm
-    sched_latency_ns = str(x[0, 4])
-    sched_migration_cost_ns = str(x[0, 5])
-    dirty_background_ratio = str(x[0, 6])
-    dirty_ratio = str(x[0, 7])
-    min_free_kbytes = str(x[0, 8])
-    vfs_cache_pressure = str(x[0, 9])
+    sched_latency_ns = str(int(x[0, 4]))
+    sched_migration_cost_ns = str(int(x[0, 5]))
+    dirty_background_ratio = str(int(x[0, 6]))
+    dirty_ratio = str(int(x[0, 7]))
+    min_free_kbytes = str(int(x[0, 8]))
+    vfs_cache_pressure = str(int(x[0, 9]))
     
+    print('sanity check : ', sched_latency_ns)
     os_kn_vm_cmd = 'sudo sysctl kernel.sched_latency_ns={} kernel.sched_migration_cost_ns={} vm.dirty_background_ratio={} vm.dirty_ratio={} vm.min_free_kbytes={} vm.vfs_cache_pressure={}'.format(
         sched_latency_ns,
         sched_migration_cost_ns,
@@ -68,7 +70,7 @@ def setup_system_params(x):
     send_cmd(os_kn_vm_cmd)
 
     # OS param - network
-    RFS = bool(x[0, 10])
+    RFS = bool(int(x[0, 10]))
     rps_sock_flow_entries = 32768 if RFS else 0
     rps_cmds = [
         f'sudo bash -c "echo {rps_sock_flow_entries} > /proc/sys/net/core/rps_sock_flow_entries"'
@@ -84,9 +86,9 @@ def setup_system_params(x):
 
     # OS param - storage
     # noatime = bool(x[0, 11])
-    nr_requests = str(x[0, 12])
-    scheduler = schedulers[x[0, 13]]
-    read_ahead_kb = str(x[0, 14])
+    nr_requests = str(int(x[0, 12]))
+    scheduler = schedulers[int(x[0, 13])]
+    read_ahead_kb = str(int(x[0, 14]))
 
     storage_cmds = [
         # 'sudo sed -i \'s/{old}/{new}/\' /etc/fstab'.format(
@@ -122,7 +124,7 @@ def f_mongo(x):
     setup_system_params(x)
 
     # mount storage at /db
-    mount_cmd = 'sudo mount -o defaults' + (',noatime' if bool(x[0, 11]) else '') + f' /dev/{block_device} /db'
+    mount_cmd = 'sudo mount -o defaults' + (',noatime' if bool(int(x[0, 11])) else '') + f' /dev/{block_device} /db'
     send_cmd(mount_cmd)
 
     # init MongoDB with params
@@ -144,8 +146,8 @@ def f_mongo(x):
     os.system(drop_coll_cmd)
 
     # load workload (on server 'database')
-    wl_mix = chr(ord('a') + x[0, 15]) # [0, 1, 2] => ['a', 'b', 'c']
-    wl_thd = x[0, 16]
+    wl_mix = chr(ord('a') + int(x[0, 15])) # [0, 1, 2] => ['a', 'b', 'c']
+    wl_thd = int(x[0, 16])
     ycsb_load_cmd = f'{ycsb_path}/bin/ycsb load mongodb -threads {db_cpu} -s -P {ycsb_path}/workloads/workload{wl_mix}'
     for k, v in ycsb_params.items():
         ycsb_load_cmd += f' -p {k}={v}'
@@ -183,9 +185,15 @@ def f_mongo(x):
     # reset params (optional)
     return_to_default()
 
-    return latency
+    return np.array([latency])
 
 
-latency = f_mongo(default_x)
-print(f'latency = {latency}')
-# return_to_default()
+if __name__ == '__main__':
+    test = np.array([[      11,       83,       37,        1, 46432792,  1467552,
+                            72,        0,   100868,      205,        0,        1,
+                        22333,        2,      314,        2,       40]])
+
+    latency = f_mongo(test)
+    #latency = f_mongo(default_x)
+    print(f'latency = {latency}')
+    # return_to_default()
