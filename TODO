@@ -1,0 +1,3 @@
+- f_mongo: add memory usage to return value. (and possibly throughput?) 
+- mongo: compare CGPTuner with Randomized results.
+- cassandra: params. how to change. domain range.

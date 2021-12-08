@@ -41,19 +41,19 @@ original_x =  [[
     0,
     0,
     # OS param - kernel, vm
-    default['sched_latency_ns'],
-    default['sched_migration_cost_ns'],
-    default['dirty_background_ratio'],
-    default['dirty_ratio'],
-    default['min_free_kbytes'],
-    default['vfs_cache_pressure'],
+    mongo_default['sched_latency_ns'],
+    mongo_default['sched_migration_cost_ns'],
+    mongo_default['dirty_background_ratio'],
+    mongo_default['dirty_ratio'],
+    mongo_default['min_free_kbytes'],
+    mongo_default['vfs_cache_pressure'],
     # OS param - network
     0, # RFS
     # OS param - storage
-    default['noatime'],
-    default['nr_requests'],
-    default['scheduler'],
-    default['read_ahead_kb'],
+    mongo_default['noatime'],
+    mongo_default['nr_requests'],
+    mongo_default['scheduler'],
+    mongo_default['read_ahead_kb'],
 ]]
 
 #example function 

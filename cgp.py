@@ -13,32 +13,6 @@ from GPyOpt.methods import BayesianOptimization
 from config.cgp_configs import *
 
 
-default_x = np.array([[
-    # DB param
-    0,
-    0,
-    0,
-    0,
-    # OS param - kernel, vm
-    default['sched_latency_ns'],
-    default['sched_migration_cost_ns'],
-    default['dirty_background_ratio'],
-    default['dirty_ratio'],
-    default['min_free_kbytes'],
-    default['vfs_cache_pressure'],
-    # OS param - network
-    0, # RFS
-    # OS param - storage
-    default['noatime'],
-    default['nr_requests'],
-    default['scheduler'],
-    default['read_ahead_kb'],
-    # workload
-    0,
-    db_cpu,
-]])
-
-
 def send_cmd(cmd, background=False):
     ssh_cmd = 'ssh {} {}'.format(database, shlex.quote(cmd))
     if (background):
@@ -48,7 +22,7 @@ def send_cmd(cmd, background=False):
     # os.system(cmd)
 
 
-def setup_system_params(x):
+def mongo_setup_system_params(x):
     # OS param - kernel, vm
     sched_latency_ns = str(int(x[0, 4]))
     sched_migration_cost_ns = str(int(x[0, 5]))
@@ -87,7 +61,7 @@ def setup_system_params(x):
     # OS param - storage
     # noatime = bool(x[0, 11])
     nr_requests = str(int(x[0, 12]))
-    scheduler = schedulers[int(x[0, 13])]
+    scheduler = storage_schedulers[int(x[0, 13])]
     read_ahead_kb = str(int(x[0, 14]))
 
     storage_cmds = [
@@ -104,8 +78,8 @@ def setup_system_params(x):
         send_cmd(cmd)
 
 
-def return_to_default():
-    setup_system_params(default_x)
+def mongo_return_to_default():
+    mongo_setup_system_params(mongo_default_x)
 
 
 def f_mongo(x):
@@ -120,12 +94,12 @@ def f_mongo(x):
         raise ValueError()
     # TODO: others?
 
-    # setup system params (OS, network, storage)
-    setup_system_params(x)
-
     # mount storage at /db
     mount_cmd = 'sudo mount -o defaults' + (',noatime' if bool(int(x[0, 11])) else '') + f' /dev/{block_device} /db'
     send_cmd(mount_cmd)
+
+    # setup system params (OS, network, storage)
+    mongo_setup_system_params(x)
 
     # init MongoDB with params
     
@@ -154,9 +128,10 @@ def f_mongo(x):
     send_cmd(ycsb_load_cmd)
 
     # run YCSB (from this server 'ycsb')
-    ycsb_run_cmd = f'{ycsb_path}/bin/ycsb run mongodb -threads {wl_thd} -P {ycsb_path}/workloads/workload{wl_mix} -p mongodb.url=mongodb://{database}:27017/ycsb > ycsb_result'
+    ycsb_run_cmd = f'{ycsb_path}/bin/ycsb run mongodb -threads {wl_thd} -P {ycsb_path}/workloads/workload{wl_mix} -p mongodb.url=mongodb://{database}:27017/ycsb'
     for k, v in ycsb_params.items():
         ycsb_run_cmd += f' -p {k}={v}'
+    ycsb_run_cmd += ' > ycsb_result'
     os.system(ycsb_run_cmd)
     with open('ycsb_result', 'r') as f:
         result = f.read()
@@ -183,7 +158,90 @@ def f_mongo(x):
     send_cmd(f'sudo umount /dev/{block_device}')
 
     # reset params (optional)
-    return_to_default()
+    mongo_return_to_default()
+
+    return np.array([latency])
+
+
+def cass_setup_system_params(x):
+    
+    pass
+
+
+def cass_return_to_default():
+    cass_setup_system_params(cass_default_x)
+
+
+def f_cassandra(x):
+    """
+    input: configuration + workload x
+    output: mean response time R (ms)
+    """
+    # sanity check
+    if (x[0, 0] < -1 or x[0,0] > 2): raise ValueError('commitlog_compression')
+    if (x[0, 1] < 8 or x[0,1] > 64 or (x[0,1] % 8 != 0)): raise ValueError('commitlog_segment_size_in_mb')
+    if (x[0, 2] < 5000 or x[0, 2] > 50000): raise ValueError('commitlog_sync_period_in_ms')
+    if (x[0, 3] < 0 or x[0, 3] > 2): raise ValueError('compact_stratrgy')
+    if (x[0, 4] < 0 or x[0, 4] > 128 or (x[0, 4] % 16 != 0)): raise ValueError('compaction_throughput_mb_per_sec')
+    if (x[0, 5] != -1 and (x[0, 5] < 2 or x[0, 5] > 8)): raise ValueError('concurrent_compactors')
+    if (x[0, 6] < 16 or x[0, 6] > 128 or (x[0, 6] % 16 != 0)): raise ValueError('concurrent_reads')
+    if (x[0, 7] < 16 or x[0, 7] > 128 or (x[0, 7] % 16 != 0)): raise ValueError('concurrent_reads')
+    if (x[0, 8] < 32 or x[0, 32] > 1024 or (x[0, 8] % 32 != 0)): raise ValueError('file_cache_size_in_mb')
+
+    # mount storage at /db
+    mount_cmd = f'sudo mount -o defaults /dev/{block_device} /db'
+    send_cmd(mount_cmd)
+
+    # setup system params (OS, network, storage)
+    cass_setup_system_params(x)
+
+    # init Cassandra with params
+    send_cmd('sudo systemctl start cassandra.service')
+    
+    # drop previous data if exists
+    # TODO: copy raw data as Konstantinos said?
+    send_cmd('cqlsh -e "TRUNCATE ycsb.usertable;"')
+
+    # load workload (on server 'database')
+    # TODO: copy raw data as Konstantinos said?
+    wl_mix = chr(ord('a') + int(x[0, 23])) # [0, 1, 2] => ['a', 'b', 'c']
+    wl_thd = int(x[0, 24])
+    ycsb_load_cmd = f'{ycsb_path}/bin/ycsb load cassandra-cql -threads {db_cpu} -s -P {ycsb_path}/workloads/workload{wl_mix} -p hosts=127.0.0.1'
+    for k, v in ycsb_params.items():
+        ycsb_load_cmd += f' -p {k}={v}'
+    send_cmd(ycsb_load_cmd)
+
+    # run YCSB (from this server 'ycsb')
+    ycsb_run_cmd = f'{ycsb_path}/bin/ycsb run cassandra-cql -threads {wl_thd} -P {ycsb_path}/workloads/workload{wl_mix} -p hosts={database}'
+    for k, v in ycsb_params.items():
+        ycsb_run_cmd += f' -p {k}={v}'
+    ycsb_run_cmd += ' > ycsb_result'
+    os.system(ycsb_run_cmd)
+    with open('ycsb_result', 'r') as f:
+        result = f.read()
+        # latency
+        m = re.search('\[UPDATE\], AverageLatency\(us\), (NaN|\d+\.\d+)', result)
+        update_latency = float(m.group(1)) if m else math.nan
+        m = re.search('\[READ\], AverageLatency\(us\), (NaN|\d+\.\d+)', result)
+        read_latency = float(m.group(1)) if m else math.nan
+        if math.isnan(update_latency) or math.isnan(read_latency):
+            latency = read_latency if math.isnan(update_latency) else update_latency
+        else:
+            latency = (update_latency + read_latency) /  2
+
+        # handling failure
+        m = re.search('\[.+-FAILED\]', result)
+        if m is not None:
+            latency = -1
+
+    # stop Cassandra
+    send_cmd('sudo systemctl stop cassandra.service')
+
+    # unmount /db
+    send_cmd(f'sudo umount /dev/{block_device}')
+
+    # reset params (optional)
+    cass_return_to_default()
 
     return np.array([latency])
 
