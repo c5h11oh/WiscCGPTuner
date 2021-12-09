@@ -21,12 +21,12 @@ def send_cmd(cmd, background=False):
 
 def mongo_setup_system_params(x):
     # OS param - kernel, vm
-    sched_latency_ns = str(int(x[0, 4]))
-    sched_migration_cost_ns = str(int(x[0, 5]))
-    dirty_background_ratio = str(int(x[0, 6]))
-    dirty_ratio = str(int(x[0, 7]))
-    min_free_kbytes = str(int(x[0, 8]))
-    vfs_cache_pressure = str(int(x[0, 9]))
+    sched_latency_ns = int(x[0, 4])
+    sched_migration_cost_ns = int(x[0, 5])
+    dirty_background_ratio = int(x[0, 6])
+    dirty_ratio = int(x[0, 7])
+    min_free_kbytes = int(x[0, 8])
+    vfs_cache_pressure = int(x[0, 9])
     
     print('sanity check : ', sched_latency_ns)
     os_kn_vm_cmd = 'sudo sysctl kernel.sched_latency_ns={} kernel.sched_migration_cost_ns={} vm.dirty_background_ratio={} vm.dirty_ratio={} vm.min_free_kbytes={} vm.vfs_cache_pressure={}'.format(
@@ -57,9 +57,9 @@ def mongo_setup_system_params(x):
 
     # OS param - storage
     # noatime = bool(x[0, 11])
-    nr_requests = str(int(x[0, 12]))
+    nr_requests = 2 ** int(x[0, 12])
     scheduler = storage_schedulers[int(x[0, 13])]
-    read_ahead_kb = str(int(x[0, 14]))
+    read_ahead_kb = int(x[0, 14])
 
     storage_cmds = [
         # 'sudo sed -i \'s/{old}/{new}/\' /etc/fstab'.format(

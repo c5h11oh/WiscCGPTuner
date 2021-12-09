@@ -26,7 +26,7 @@ domain = [{'name': 'wiredTigerCacheSizeGB', 'type': 'continuous', 'domain': (1,2
           {'name': 'vm.vfs_cache_pressure', 'type': 'discrete', 'domain': (10,300)},
           {'name': 'RFS', 'type': 'discrete', 'domain': (0,1)},
           {'name': 'noatime', 'type': 'discrete', 'domain': (0,1)},
-          {'name': 'nr_requests', 'type': 'discrete', 'domain': (1000,24000)},
+          {'name': 'nr_requests', 'type': 'discrete', 'domain': (4,20)},
           {'name': 'scheduler', 'type': 'discrete', 'domain': (0,6)},
           {'name': 'read_ahead_kb', 'type': 'discrete', 'domain': (10,384)},
           {'name': 'workload', 'type': 'discrete', 'domain': (0,2)},

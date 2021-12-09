@@ -34,7 +34,7 @@ mongo_default = { # database server default configurations
     'RFS': 0,
     # Storage
     'noatime' : False,
-    'nr_requests' : 256,
+    'nr_requests' : 8, # 2**8 = 256
     'scheduler' : 3, # in range [0, sizeof(schedulers)]
     'read_ahead_kb' : 128,
 }
