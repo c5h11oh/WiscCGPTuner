@@ -4,11 +4,8 @@ import shlex
 import glob
 import re
 import math
-# Bayesian Optimization
-import GPy
+from ruamel.yaml import YAML
 import numpy as np
-import GPyOpt
-from GPyOpt.methods import BayesianOptimization
 # Configurations
 from config.cgp_configs import *
 
@@ -164,12 +161,72 @@ def f_mongo(x):
 
 
 def cass_setup_system_params(x):
+    # Cassandra -- use ruamel.yaml and send it to "database"
+    os.system(f'scp {database}:/etc/cassandra/cassandra.yaml.backup-20211208 config/')
+    y = YAML(typ='safe')
+    y.indent(offset=2)
+    with open('config/cassandra.yaml.backup-20211208', 'r') as f:
+        cass_config = y.load(f)
+    if (x[0][0] != -1):
+        cass_config['commitlog_compression'] = [{'class_name': cass_compression[x[0][0]]}]
+    cass_config['commitlog_segment_size_in_mb'] = x[0][1]
+    cass_config['commitlog_sync_period_in_ms'] = x[0][2]
+    # 'compact_strategy' is set in f_cassandra()
+    cass_config['compaction_throughput_mb_per_sec'] = x[0][4]
+    if (x[0][5] != -1):
+        cass_config['concurrent_compactors'] = x[0][5]
+    cass_config['concurrent_reads'] = x[0][6]
+    cass_config['concurrent_writes'] = x[0][7]
+    if (x[0][8] != -1):
+        cass_config['file_cache_size_in_mb'] = x[0][8]
+    with open('config/cassandra.yaml', 'w') as f:
+        y.dump(cass_config, f)
     
-    pass
+    # fix wrong parsing...
+    os.system('sed -i -r \'s/(seeds: )([^"]+)/\\1\\"\\2\\"/\' config/cassandra.yaml')
+    # send to database
+    os.system(f'scp config/cassandra.yaml {database}:/etc/cassandra/')
 
+    # JVM
+    if (CONFIGURE_JVM):
+        os.system(f'scp {database}:/etc/cassandra/jvm.options.backup-20211208 config/jvm.options')
+        jvm_sed_cmds = [
+            f"s/(CMSInitiatingOccupancyFraction=)[0-9]*/\\1{x[0][9]}/",
+            f"s/(MaxTenuringThreshold=)[0-9]*/\\1{x[0][13]}/",
+            f"s/(SurvivorRatio=)[0-9]*/\\1{x[0][16]}/",
+        ]
+        if (x[0][10] != -1):
+            jvm_sed_cmds.append(f"s/#(-XX:ConcGCThreads=)[0-9]*/\\1{x[0][10]}/")
+        if (x[0][11] == 1):
+            jvm_sed_cmds.append(f"s/-XX:\\+UseParNewGC//")
+            jvm_sed_cmds.append(f"s/-XX:\\+UseConcMarkSweepGC/-XX:\\+UseG1GC/")
+        if (x[0][12] != -1):
+            jvm_sed_cmds.append(f"s/#-Xms4G/-Xms{x[0][12]}G/")
+            jvm_sed_cmds.append(f"s/#-Xmx4G/-Xmx{x[0][12]}G/")
+        if (x[0][15] != -1):
+            jvm_sed_cmds.append(f"s/#(-XX:ParallelGCThreads=)[0-9]*/\\1{x[0][15]}/")
+        jvm_sed_cmd = 'sed -i -r '
+        for cmd in jvm_sed_cmds:
+            jvm_sed_cmd += f"-e '{cmd}' "
+        jvm_sed_cmd += 'config/jvm.options'
+        os.system(jvm_sed_cmd)
+
+        if (x[0][14] != -1):
+            os.system(f'echo "-XX:NewRatio={x[0][14]}" >>config/jvm.options')
+        os.system(f'scp config/jvm.options {database}:/etc/cassandra/')
+
+    # OS
+    if (CONFIGURE_OS):
+        pass
+        # TODO OS
 
 def cass_return_to_default():
-    cass_setup_system_params(cass_default_x)
+    # Cassandra and JVM: simply place back backup cassandra.yaml and jvm.options
+    send_cmd('cp /etc/cassandra/cassandra.yaml.backup-20211208 /etc/cassandra/cassandra.yaml')
+    send_cmd('cp /etc/cassandra/jvm.options.backup-20211208 /etc/cassandra/jvm.options')
+    
+    # OS:
+    # TODO OS
 
 
 def f_cassandra(x):
@@ -178,34 +235,54 @@ def f_cassandra(x):
     output: mean response time R (ms)
     """
     # sanity check
-    if (x[0, 0] < -1 or x[0,0] > 2): raise ValueError('commitlog_compression')
-    if (x[0, 1] < 8 or x[0,1] > 64 or (x[0,1] % 8 != 0)): raise ValueError('commitlog_segment_size_in_mb')
-    if (x[0, 2] < 5000 or x[0, 2] > 50000): raise ValueError('commitlog_sync_period_in_ms')
-    if (x[0, 3] < 0 or x[0, 3] > 2): raise ValueError('compact_stratrgy')
-    if (x[0, 4] < 0 or x[0, 4] > 128 or (x[0, 4] % 16 != 0)): raise ValueError('compaction_throughput_mb_per_sec')
-    if (x[0, 5] != -1 and (x[0, 5] < 2 or x[0, 5] > 8)): raise ValueError('concurrent_compactors')
-    if (x[0, 6] < 16 or x[0, 6] > 128 or (x[0, 6] % 16 != 0)): raise ValueError('concurrent_reads')
-    if (x[0, 7] < 16 or x[0, 7] > 128 or (x[0, 7] % 16 != 0)): raise ValueError('concurrent_reads')
-    if (x[0, 8] < 32 or x[0, 32] > 1024 or (x[0, 8] % 32 != 0)): raise ValueError('file_cache_size_in_mb')
+    ## Cassandra
+    if (x[0][0] < -1 or x[0][0] > 2): raise ValueError('commitlog_compression')
+    if (x[0][1] < 8 or x[0][1] > 64 or (x[0][1] % 8 != 0)): raise ValueError('commitlog_segment_size_in_mb')
+    if (x[0][2] < 5000 or x[0][2] > 50000): raise ValueError('commitlog_sync_period_in_ms')
+    if (x[0][3] < 0 or x[0][3] > 2): raise ValueError('compact_stratrgy')
+    if (x[0][4] < 0 or x[0][4] > 128 or (x[0][4] % 16 != 0)): raise ValueError('compaction_throughput_mb_per_sec')
+    if (x[0][5] != -1 and (x[0][5] < 2 or x[0][5] > 8)): raise ValueError('concurrent_compactors')
+    if (x[0][6] < 16 or x[0][6] > 128 or (x[0][6] % 16 != 0)): raise ValueError('concurrent_reads')
+    if (x[0][7] < 16 or x[0][7] > 128 or (x[0][7] % 16 != 0)): raise ValueError('concurrent_reads')
+    if (x[0][8] != -1 and (x[0][8] < 32 or x[0][32] > 1024 or (x[0][8] % 32 != 0))): raise ValueError('file_cache_size_in_mb')
+    
+    if (CONFIGURE_JVM):
+        ## JVM
+        if (x[0][9] < 50 or x[0][9] > 99): raise ValueError('CMSInitiatingOccupancyFraction')
+        if (x[0][10] != -1 and (x[0][10] < 1 or x[0][10] > 64)): raise ValueError('ConcGCThreads')
+        if (x[0][11] < 0 or x[0][11] > 1): raise ValueError('GC_Type')
+        if (x[0][12] != -1 and (x[0][12] < 1 or x[0][12] > 24)): raise ValueError('Xmx_Xms')
+        if (x[0][13] < 0 or x[0][13] > 15): raise ValueError('MaxTenuringThreshold')
+        if (x[0][14] != -1 and (x[0][14] < 1 or x[0][14] > 4)): raise ValueError('NewRatio')
+        if (x[0][15] != -1 and (x[0][15] < 1 or x[0][15] > 64)): raise ValueError('ParallelGCThreads')
+        if (x[0][16] < 4 or x[0][16] > 32): raise ValueError('SurvivorRatio')
+    
+    if (CONFIGURE_OS):
+        # TODO: OS
+        pass
 
     # mount storage at /db
     mount_cmd = f'sudo mount -o defaults /dev/{block_device} /db'
     send_cmd(mount_cmd)
 
-    # setup system params (OS, network, storage)
+    # setup system params (Cassandra, JVM, OS)
     cass_setup_system_params(x)
 
     # init Cassandra with params
+    send_cmd('sudo systemctl stop cassandra.service')
     send_cmd('sudo systemctl start cassandra.service')
-    
+    # with "ALTER TABLE ycsb.usertable WITH compaction = {\'class\': \'{cmp}\'}".format(cmp=x[0][3]) as sql_stmt:
+    sql_stmt = "ALTER TABLE ycsb.usertable WITH compaction = {\'class\': \'" + cass_compact_strategy[x[0][3]] + "\'}"
+    send_cmd(f'cqlsh -e "{sql_stmt}"')
+
     # drop previous data if exists
     # TODO: copy raw data as Konstantinos said?
     send_cmd('cqlsh -e "TRUNCATE ycsb.usertable;"')
 
     # load workload (on server 'database')
     # TODO: copy raw data as Konstantinos said?
-    wl_mix = chr(ord('a') + int(x[0, 23])) # [0, 1, 2] => ['a', 'b', 'c']
-    wl_thd = int(x[0, 24])
+    wl_mix = chr(ord('a') + int(x[0][23])) # [0, 1, 2] => ['a', 'b', 'c']
+    wl_thd = int(x[0][24])
     ycsb_load_cmd = f'{ycsb_path}/bin/ycsb load cassandra-cql -threads {db_cpu} -s -P {ycsb_path}/workloads/workload{wl_mix} -p hosts=127.0.0.1'
     for k, v in ycsb_params.items():
         ycsb_load_cmd += f' -p {k}={v}'
@@ -247,11 +324,49 @@ def f_cassandra(x):
 
 
 if __name__ == '__main__':
-    test = np.array([[      11,       83,       37,        1, 46432792,  1467552,
-                            72,        0,   100868,      205,        0,        1,
-                        22333,        2,      314,        2,       40]])
+    test_cassandra = [[
+        # Cassandra param (start from 0)
+        1,
+        16,
+        5000,
+        1,
+        0,
+        3,
+        64,
+        80,
+        cass_default['file_cache_size_in_mb'],
 
-    latency = f_mongo(test)
+        # JVM param (start from 9)
+        80,
+        20,
+        1,
+        23,
+        13,
+        2,
+        17,
+        7, 
+
+        # OS param (start from 17)
+        cass_default['CPUSchedNrMigrate'],
+        cass_default['MemoryTransparentHugepageEnabled'],
+        cass_default['MemoryVmDirtyExpire'],
+        cass_default['NetworkNetIpv4TcpMaxSynBacklog'],
+        cass_default['scheduler'],
+        cass_default['read_ahead_kb'],
+
+        # workload (start from 23)
+        0,
+        db_cpu
+    ]]
+    f_cassandra(test_cassandra)
+    # cass_setup_system_params(test_cassandra)
+    # cass_return_to_default()
+    
+    # test_mongo = np.array([[      11,       83,       37,        1, 46432792,  1467552,
+                        #     72,        0,   100868,      205,        0,        1,
+                        # 22333,        2,      314,        2,       40]])
+
+    # latency = f_mongo(test_mongo)
     #latency = f_mongo(default_x)
-    print(f'latency = {latency}')
+    # print(f'latency = {latency}')
     # return_to_default()

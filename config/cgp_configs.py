@@ -64,12 +64,15 @@ mongo_default_x = np.array([[
 ]])
 
 ## cassandra configurations
+CONFIGURE_JVM = False
+CONFIGURE_OS = False
+
 cass_compression = ['LZ4Compressor', 'SnappyCompressor', 'DeflateCompressor']
 cass_compact_strategy = ['SizeTieredCompactionStrategy', 'LeveledCompactionStrategy', 'TimeWindowCompactionStrategy']
 cass_default = { # comments are their domains. -1 means 'commented out'
     # Cassandra param
-    ## cassandra.yaml
-    'commitlog_compression': 0, # [-1..2] discrete.
+    ## cassandra.yaml (0)
+    'commitlog_compression': -1, # [-1..2] discrete.
     'commitlog_segment_size_in_mb': 32, # 8, 16, 32 (, 48, 64)
     'commitlog_sync_period_in_ms': 10000, # dunno... [5000..50000] ?
 
@@ -77,25 +80,25 @@ cass_default = { # comments are their domains. -1 means 'commented out'
     ##   {'class' : 'SizeTieredCompactionStrategy'}
     'compact_stratrgy' : 0, # [0..2] discrete
 
-    ## cassandra.yaml
-    'compaction_throughput_mb_per_sec': 64, # 0 (disable throttling), [k*16], k = [0..8]
+    ## cassandra.yaml (4)
+    'compaction_throughput_mb_per_sec': 16, # 0 (disable throttling), [k*16], k = [0..8]
     'concurrent_compactors': -1, # -1, [2..8]
     'concurrent_reads': 32, # [k*16], k = [1..8]
     'concurrent_writes': 32, # [k*16], k = [1..8]
-    'file_cache_size_in_mb': 512, # [k*32], k = [1..32]
+    'file_cache_size_in_mb': -1, # -1, [k*32], k = [1..32]
 
     # JVM param
-    ## /etc/cassandra/jvm.options
-    'CMSInitiatingOccupancyFraction': 75,
-    'ConcGCThreads': -1,
-    'GC_Type': 0, 
+    ## /etc/cassandra/jvm.options (9)
+    'CMSInitiatingOccupancyFraction': 75, # [50..99]
+    'ConcGCThreads': -1, # -1, [1..64]
+    'GC_Type': 0, # 0, 1 
     'Xmx_Xms': -1, # -1, [1G..max RAM size-8G?] => -1, [1..24]
     'MaxTenuringThreshold': 1, # [0..15]
     'NewRatio': -1, # -1, [1..4]
     'ParallelGCThreads': -1, # -1, [1..64?]
     'SurvivorRatio': 8, # [4..32]
 
-    # OS param not working on it yet
+    # OS param not working on it yet (17)
     'CPUSchedNrMigrate': -1,
     'MemoryTransparentHugepageEnabled': -1,
     'MemoryVmDirtyExpire': -1,
@@ -103,7 +106,7 @@ cass_default = { # comments are their domains. -1 means 'commented out'
     'scheduler': 3,
     'read_ahead_kb': 128,
 }
-cass_default_x = np.array([[
+cass_default_x = [[
     # Cassandra param (start from 0)
     cass_default['commitlog_compression'],
     cass_default['commitlog_segment_size_in_mb'],
@@ -136,7 +139,7 @@ cass_default_x = np.array([[
     # workload (start from 23)
     0,
     db_cpu
-]])
+]]
 
 # obsolete
 """
