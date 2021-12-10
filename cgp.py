@@ -161,31 +161,19 @@ def f_mongo(x):
 
 
 def cass_setup_system_params(x):
-    # Cassandra -- use ruamel.yaml and send it to "database"
-    os.system(f'scp {database}:/etc/cassandra/cassandra.yaml.backup-20211208 config/')
-    y = YAML(typ='safe')
-    y.indent(offset=2)
-    with open('config/cassandra.yaml.backup-20211208', 'r') as f:
-        cass_config = y.load(f)
+    send_cmd(f'cp default.cassandra.yaml cassandra.yaml')
     if (x[0][0] != -1):
-        cass_config['commitlog_compression'] = [{'class_name': cass_compression[x[0][0]]}]
-    cass_config['commitlog_segment_size_in_mb'] = x[0][1]
-    cass_config['commitlog_sync_period_in_ms'] = x[0][2]
-    # 'compact_strategy' is set in f_cassandra()
-    cass_config['compaction_throughput_mb_per_sec'] = x[0][4]
+        send_cmd(f'yq e -i ".commitlog_compression[0].class_name = {x[0][0]}" cassandra.yaml')
+    send_cmd(f'yq e -i ".commitlog_segment_size_in_mb = {x[0][1]}" cassandra.yaml')
+    send_cmd(f'yq e -i ".commitlog_sync_period_in_ms = {x[0][2]}" cassandra.yaml')
+    send_cmd(f'yq e -i ".compaction_throughput_mb_per_sec = {x[0][4]}" cassandra.yaml')
     if (x[0][5] != -1):
-        cass_config['concurrent_compactors'] = x[0][5]
-    cass_config['concurrent_reads'] = x[0][6]
-    cass_config['concurrent_writes'] = x[0][7]
+        send_cmd(f'yq e -i ".concurrent_compactors = {x[0][5]}" cassandra.yaml')
+    send_cmd(f'yq e -i ".concurrent_reads = {x[0][6]}" cassandra.yaml')
+    send_cmd(f'yq e -i ".concurrent_writes = {x[0][7]}" cassandra.yaml')
     if (x[0][8] != -1):
-        cass_config['file_cache_size_in_mb'] = x[0][8]
-    with open('config/cassandra.yaml', 'w') as f:
-        y.dump(cass_config, f)
-    
-    # fix wrong parsing...
-    os.system('sed -i -r \'s/(seeds: )([^"]+)/\\1\\"\\2\\"/\' config/cassandra.yaml')
-    # send to database
-    os.system(f'scp config/cassandra.yaml {database}:/etc/cassandra/')
+        send_cmd(f'yq e -i ".file_cache_size_in_mb = {x[0][8]}" cassandra.yaml')
+    send_cmd(f'cp cassandra.yaml /etc/cassandra/cassandra.yaml')
 
     # JVM
     if (CONFIGURE_JVM):
@@ -244,7 +232,7 @@ def f_cassandra(x):
     if (x[0][5] != -1 and (x[0][5] < 2 or x[0][5] > 8)): raise ValueError('concurrent_compactors')
     if (x[0][6] < 16 or x[0][6] > 128 or (x[0][6] % 16 != 0)): raise ValueError('concurrent_reads')
     if (x[0][7] < 16 or x[0][7] > 128 or (x[0][7] % 16 != 0)): raise ValueError('concurrent_reads')
-    if (x[0][8] != -1 and (x[0][8] < 32 or x[0][32] > 1024 or (x[0][8] % 32 != 0))): raise ValueError('file_cache_size_in_mb')
+    if (x[0][8] != -1 and (x[0][8] < 32 or x[0][8] > 1024 or (x[0][8] % 32 != 0))): raise ValueError('file_cache_size_in_mb')
     
     if (CONFIGURE_JVM):
         ## JVM
@@ -363,10 +351,10 @@ if __name__ == '__main__':
     # cass_return_to_default()
     
     # test_mongo = np.array([[      11,       83,       37,        1, 46432792,  1467552,
-                        #     72,        0,   100868,      205,        0,        1,
-                        # 22333,        2,      314,        2,       40]])
+    #                         72,        5,   100868,      205,        0,        1,
+    #                     22333,        2,      314,        2,       40]])
 
     # latency = f_mongo(test_mongo)
-    #latency = f_mongo(default_x)
+    # latency = f_mongo(mongo_default_x)
     # print(f'latency = {latency}')
     # return_to_default()
