@@ -163,7 +163,7 @@ def f_mongo(x):
 def cass_setup_system_params(x):
     send_cmd(f'cp default.cassandra.yaml cassandra.yaml')
     if (x[0][0] != -1):
-        send_cmd(f'yq e -i ".commitlog_compression[0].class_name = {x[0][0]}" cassandra.yaml')
+        send_cmd(f'yq e -i ".commitlog_compression[0].class_name = \\"{cass_compression[x[0][0]]}\\"" cassandra.yaml')
     send_cmd(f'yq e -i ".commitlog_segment_size_in_mb = {x[0][1]}" cassandra.yaml')
     send_cmd(f'yq e -i ".commitlog_sync_period_in_ms = {x[0][2]}" cassandra.yaml')
     send_cmd(f'yq e -i ".compaction_throughput_mb_per_sec = {x[0][4]}" cassandra.yaml')
